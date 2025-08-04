@@ -3,7 +3,6 @@ package chain
 import (
 	"reflect"
 
-	"github.com/centrifuge/go-substrate-rpc-client/v4/registry"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -76,10 +75,6 @@ func (c *Client) ParseBlockData(hash types.Hash) (ParsedBlock, error) {
 	parsedBlock := ParsedBlock{
 		Hash: hash,
 	}
-	callRegistry, err := registry.NewFactory().CreateCallRegistry(c.Metadata)
-	if err != nil {
-		return parsedBlock, errors.Wrap(err, "parse block data error")
-	}
 	block, err := c.RPC.Chain.GetBlock(hash)
 	if err != nil {
 		return parsedBlock, errors.Wrap(err, "parse block data error")
@@ -87,7 +82,7 @@ func (c *Client) ParseBlockData(hash types.Hash) (ParsedBlock, error) {
 
 	parsedBlock.Header = block.Block.Header
 	for _, e := range block.Block.Extrinsics {
-		call := callRegistry[e.Method.CallIndex]
+		call := c.CallRegistery[e.Method.CallIndex]
 		data, _ := codec.Encode(e.Method)
 		h := blake2b.Sum256(data)
 		parsedBlock.Extrinsics = append(parsedBlock.Extrinsics, ParsedExtrinsic{

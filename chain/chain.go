@@ -9,6 +9,7 @@ import (
 	"time"
 
 	rpc "github.com/centrifuge/go-substrate-rpc-client/v4"
+	"github.com/centrifuge/go-substrate-rpc-client/v4/registry"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/registry/retriever"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/registry/state"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
@@ -25,9 +26,10 @@ type Client struct {
 	GenesisBlockHash types.Hash
 	RuntimeVersion   *types.RuntimeVersion
 	*rpc.SubstrateAPI
-	Retriever retriever.EventRetriever
-	Timeout   time.Duration
-	Metadata  *types.Metadata
+	Retriever     retriever.EventRetriever
+	Timeout       time.Duration
+	Metadata      *types.Metadata
+	CallRegistery registry.CallRegistry
 }
 
 type Option func(*Client) error
@@ -146,6 +148,10 @@ func NewClient(opts ...Option) (*Client, error) {
 		state.NewEventProvider(client.RPC.State),
 		client.RPC.State,
 	)
+	if err != nil {
+		return client, errors.Wrap(err, "new cess chain client error")
+	}
+	client.CallRegistery, err = registry.NewFactory().CreateCallRegistry(client.Metadata)
 	if err != nil {
 		return client, errors.Wrap(err, "new cess chain client error")
 	}
