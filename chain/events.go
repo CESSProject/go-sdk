@@ -7,7 +7,11 @@ import (
 )
 
 var (
-	CommonEventsTypeMap = map[string]reflect.Type{
+	commonEventsTypeMap map[string]reflect.Type
+)
+
+func init() {
+	commonEventsTypeMap = map[string]reflect.Type{
 
 		// Treasury
 		"Treasury.Burnt":           reflect.TypeOf(types.EventTreasuryBurnt{}),
@@ -112,7 +116,7 @@ var (
 		//"StorageHandler.MintTerritory":       reflect.TypeOf(),
 		//"StorageHandler.CancelPurchaseAction":       reflect.TypeOf({}),
 	}
-)
+}
 
 // ------------------------Audit-------------------
 type EventVerifyProof struct {

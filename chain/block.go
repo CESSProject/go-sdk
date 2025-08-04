@@ -33,6 +33,14 @@ type ParsedEvent struct {
 	Event any
 }
 
+// ParseBlockDataWithBlockNumber retrieves and parses block data by block number
+//
+// Parameters:
+//   - block: Target block number to parse
+//
+// Returns:
+//   - ParsedBlock: Structured block data with extrinsics and events
+//   - error: Wrapped error containing original error context
 func (c *Client) ParseBlockDataWithBlockNumber(block uint32) (ParsedBlock, error) {
 	hash, err := c.RPC.Chain.GetBlockHash(uint64(block))
 	if err != nil {
@@ -45,6 +53,25 @@ func (c *Client) ParseBlockDataWithBlockNumber(block uint32) (ParsedBlock, error
 	return data, nil
 }
 
+// ParseBlockData processes raw block data into structured format
+//
+// Workflow:
+//  1. Creates call registry from metadata
+//  2. Retrieves raw block data from chain
+//  3. Processes extrinsics (transactions):
+//     - Generates call hash
+//     - Extracts signature information
+//  4. Retrieves and processes system events:
+//     - Matches events to extrinsics
+//     - Handles success/failure statuses
+//     - Captures extrinsic errors
+//
+// Parameters:
+//   - hash: Block hash identifier
+//
+// Returns:
+//   - ParsedBlock: Fully parsed block structure
+//   - error: Wrapped error with operation context
 func (c *Client) ParseBlockData(hash types.Hash) (ParsedBlock, error) {
 	parsedBlock := ParsedBlock{
 		Hash: hash,
@@ -81,7 +108,7 @@ func (c *Client) ParseBlockData(hash types.Hash) (ParsedBlock, error) {
 
 	index := 0
 	for _, e := range events {
-		if t, ok := CommonEventsTypeMap[e.Name]; ok {
+		if t, ok := commonEventsTypeMap[e.Name]; ok {
 			value := reflect.New(t).Interface()
 			if err := DecodeEvent(e, value); err == nil {
 				eventBuf = append(eventBuf, ParsedEvent{Name: e.Name, Event: value})

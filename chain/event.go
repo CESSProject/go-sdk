@@ -17,6 +17,50 @@ var (
 	ErrTxEventNotFound = errors.New("tx event not found")
 )
 
+/*
+RegisterEventType registers custom event type to the global registry.
+Allows decoding of blockchain events into concrete Go types.
+
+Parameters:
+  - eventName: Full event name in format "Module.Event" (e.g. "Balances.Transfer")
+  - eventType: Reflect type of the target event struct
+*/
+func RegisterEventType(eventName string, eventType reflect.Type) {
+	commonEventsTypeMap[eventName] = eventType
+}
+
+/*
+GetRegisteredEventInstance retrieves a new instance of registered event type.
+
+Parameters:
+  - eventName: Registered event name to look up
+
+Returns:
+  - interface{}: Newly created instance pointer for the event type
+  - bool: True if the event type was registered
+*/
+func GetRegisteredEventIntance(eventName string) (any, bool) {
+	if t, ok := commonEventsTypeMap[eventName]; ok {
+		return reflect.New(t).Interface(), ok
+	}
+	return nil, false
+}
+
+/*
+GetRegisteredEventTypes lists all registered event type names.
+
+Returns:
+  - []string: Slice of registered event names in "Module.Event" format.
+    Note: Order is not guaranteed as it's based on map iteration.
+*/
+func GetRegisteredEventTypes() []string {
+	var res []string
+	for k := range commonEventsTypeMap {
+		res = append(res, k)
+	}
+	return res
+}
+
 // ParseTxResult parses transaction events to find the target event and validate transaction status.
 // Processes events, checks for extrinsic success/failure, and matches the specified event name.
 // Parameters:
