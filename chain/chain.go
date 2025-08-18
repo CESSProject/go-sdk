@@ -489,13 +489,9 @@ func (c *Client) UpdateCallerNonce(caller *signature.KeyringPair) error {
 	if err != nil {
 		return err
 	}
-	ok, err := c.RPC.State.GetStorageLatest(key, &accountInfo)
-	if err != nil {
-		return err
-	}
 
-	if !ok {
-		return errors.New("failed to get the nonce value on chain")
+	if _, err = c.RPC.State.GetStorageLatest(key, &accountInfo); err != nil {
+		return err
 	}
 	act, loaded := c.nonceMap.LoadOrStore(caller.Address, &atomic.Uint64{})
 	v, ok := act.(*atomic.Uint64)
