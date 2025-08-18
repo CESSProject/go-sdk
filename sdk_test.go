@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,32 @@ var (
 func TestErrorWarp(t *testing.T) {
 	err := errors.Wrap(ErrorNotFound, "test error warp")
 	t.Log(errors.Unwrap(errors.Unwrap(err)))
+}
+
+func TestTransfer(t *testing.T) {
+	cli, err := chain.NewLightCessClient(
+		"hire useless peanut engine amused fuel wet toddler list party salmon dream",
+		[]string{"wss://t2-rpc.cess.network"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wg := sync.WaitGroup{}
+	wg.Add(100)
+	st := time.Now()
+	for i := range 100 {
+		go func(i int) {
+			defer wg.Done()
+			tx, err := cli.TransferToken("cXjTYBWUY68uGG2t3ShAhmLtNhz3WdBfXrYn4XaQYg5pKLZcF", "5000000000000000000", nil, nil)
+			if err != nil {
+				t.Log(err)
+				return
+			}
+			t.Log(i, "success,block hash:", tx)
+		}(i)
+	}
+	wg.Wait()
+	t.Log("time:", time.Since(st))
 }
 
 func TestUplaodWithPre(t *testing.T) {

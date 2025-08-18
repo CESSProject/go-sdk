@@ -484,21 +484,21 @@ func (c *Client) UpdateCallerNonce(caller *signature.KeyringPair) error {
 	if caller == nil {
 		return errors.New("invalid caller")
 	}
+
 	var accountInfo types.AccountInfo
 	key, err := types.CreateStorageKey(c.Metadata, "System", "Account", caller.PublicKey)
 	if err != nil {
 		return err
 	}
-
-	if _, err = c.RPC.State.GetStorageLatest(key, &accountInfo); err != nil {
+	if _, err := c.RPC.State.GetStorageLatest(key, &accountInfo); err != nil {
 		return err
 	}
 	act, loaded := c.nonceMap.LoadOrStore(caller.Address, &atomic.Uint64{})
 	v, ok := act.(*atomic.Uint64)
 	if !ok {
-		errors.New("invalid nonce value")
+		return errors.New("invalid nonce value")
 	}
-	if loaded && v.Load() < uint64(accountInfo.Nonce) {
+	if !loaded || v.Load() < uint64(accountInfo.Nonce) {
 		v.Store(uint64(accountInfo.Nonce))
 	}
 	return nil
