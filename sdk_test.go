@@ -3,11 +3,15 @@ package sdkgo_test
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +19,7 @@ import (
 	"github.com/CESSProject/go-sdk/retriever"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/registry"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
+	"github.com/klauspost/reedsolomon"
 	"github.com/pkg/errors"
 )
 
@@ -223,4 +228,96 @@ func TestSdkEvents(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestUploadDataToGateway(t *testing.T) {
+	baseUrl := "http://154.194.34.195:1306"
+	mnemonic := "skill income exile ethics sick excess sea deliver medal junk update fault"
+	message := "123456"
+	territory := "test1"
+	account := "cXkGyoXtxnK2Zbw8X5gArXi9VGqKqE7b517muih45ds9Ebdno"
+	sign, err := retriever.SignedSR25519WithMnemonic(mnemonic, []byte(message))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("token", token)
+	wg := &sync.WaitGroup{}
+	errCounter := &atomic.Int32{}
+	total := 200
+	wg.Add(total)
+	for i := range total {
+		go func(i int) {
+			defer wg.Done()
+			writer := bytes.NewBuffer(nil)
+			for range 1 {
+				reader, err := GenRandomBlockData(writer, 4096)
+				if err != nil {
+					t.Log(err)
+					return
+				}
+				st := time.Now()
+				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+8000), reader, false)
+				if err != nil {
+					errCounter.Add(1)
+					t.Log(err)
+					return
+				}
+				t.Log("goroutine", i, fhash, time.Since(st))
+			}
+		}(i)
+	}
+	wg.Wait()
+	t.Log("File upload stress test completed, total:", total, " err:", errCounter.Load())
+}
+
+func TestReedSolomon(t *testing.T) {
+	enc, err := reedsolomon.New(4, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 32*1024*1024)
+	if _, err = rand.Read(buf[:1024*1024]); err != nil {
+		t.Fatal(err)
+	}
+	shards, err := enc.Split(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("splited data shards:")
+	for i, s := range shards {
+		h := sha256.Sum256(s)
+		t.Log(i, hex.EncodeToString(h[:]))
+	}
+	if err = enc.Encode(shards); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("encoded data shards:")
+	for i, s := range shards {
+		h := sha256.Sum256(s)
+		t.Log(i, hex.EncodeToString(h[:]))
+	}
+	zeroData := make([]byte, 8*1024*1024)
+	h := sha256.Sum256(zeroData)
+	t.Log("zero value data:", hex.EncodeToString(h[:]))
+}
+
+func GenRandomBlockData(writer *bytes.Buffer, size int64) (io.Reader, error) {
+	buf := make([]byte, 4096)
+	writer.Reset()
+	for written := int64(0); written < size; written += 4096 {
+		var bytesToWrite int64 = 4096
+		if written+bytesToWrite > size {
+			bytesToWrite = size - written
+		}
+		_, err := rand.Read(buf[:bytesToWrite])
+		if err != nil {
+			return writer, err
+		}
+		writer.Write(buf[:bytesToWrite])
+	}
+	return writer, nil
 }

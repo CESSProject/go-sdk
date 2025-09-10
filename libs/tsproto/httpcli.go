@@ -320,6 +320,31 @@ func FetchFile(gatewayUrl, token, fid, did string) ([]byte, error) {
 	return resp, nil
 }
 
+func FetchDataAndFlag(gatewayUrl, token, fid, did string) (string, []byte, error) {
+	params := url.Values{}
+	params.Add("fragment", did)
+	params.Add("fid", fid)
+	u := gatewayUrl + "?" + params.Encode()
+	req, err := http.NewRequest(http.MethodGet, u, bytes.NewBuffer(nil))
+	if err != nil {
+		return "", nil, errors.Wrap(err, "fetch data and flag from gateway error")
+	}
+	req.Header.Add("token", token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", nil, errors.Wrap(err, "fetch data and flag from gateway error")
+	}
+	defer resp.Body.Close()
+	bytes, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		err = fmt.Errorf("error: %s", string(bytes))
+		return "", nil, errors.Wrap(err, "fetch data and flag from gateway error")
+	}
+	flag := resp.Header.Get("dflag")
+	return flag, bytes, nil
+}
+
 func PushFileToStorageNode(url, acc, message, sign, fid, fragment, path string) error {
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
