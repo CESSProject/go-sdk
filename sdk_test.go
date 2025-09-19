@@ -34,28 +34,30 @@ func TestErrorWarp(t *testing.T) {
 
 func TestTransfer(t *testing.T) {
 	cli, err := chain.NewLightCessClient(
-		"hire useless peanut engine amused fuel wet toddler list party salmon dream",
+		"skill income exile ethics sick excess sea deliver medal junk update fault",
 		[]string{"wss://t2-rpc.cess.network"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	total,errCount:=3000,&atomic.Int32{}
 	wg := sync.WaitGroup{}
-	wg.Add(100)
+	wg.Add(total)
 	st := time.Now()
-	for i := range 100 {
+	for i := range total {
 		go func(i int) {
 			defer wg.Done()
-			tx, err := cli.TransferToken("cXjTYBWUY68uGG2t3ShAhmLtNhz3WdBfXrYn4XaQYg5pKLZcF", "5000000000000000000", nil, nil)
+			tx, err := cli.TransferToken("cXjTYBWUY68uGG2t3ShAhmLtNhz3WdBfXrYn4XaQYg5pKLZcF", "1000000000000000000", nil, nil)
 			if err != nil {
 				t.Log(err)
+				errCount.Add(1)
 				return
 			}
 			t.Log(i, "success,block hash:", tx)
 		}(i)
 	}
 	wg.Wait()
-	t.Log("time:", time.Since(st))
+	t.Log("time:", time.Since(st),"total:",total,"error:",errCount.Load())
 }
 
 func TestUplaodWithPre(t *testing.T) {
@@ -247,7 +249,7 @@ func TestUploadDataToGateway(t *testing.T) {
 	t.Log("token", token)
 	wg := &sync.WaitGroup{}
 	errCounter := &atomic.Int32{}
-	total := 200
+	total := 3000
 	wg.Add(total)
 	for i := range total {
 		go func(i int) {
@@ -260,7 +262,7 @@ func TestUploadDataToGateway(t *testing.T) {
 					return
 				}
 				st := time.Now()
-				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+8000), reader, false)
+				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+12000), reader, false)
 				if err != nil {
 					errCounter.Add(1)
 					t.Log(err)

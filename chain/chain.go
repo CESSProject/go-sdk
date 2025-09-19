@@ -29,6 +29,7 @@ type Client struct {
 	Retriever     retriever.EventRetriever
 	Timeout       time.Duration
 	Metadata      *types.Metadata
+	requestQueue  chan struct{}
 	CallRegistery registry.CallRegistry
 }
 
@@ -122,7 +123,7 @@ func NewLightCessClient(mnemonic string, rpcs []string) (*Client, error) {
 //	Configured Client instance
 //	Error if any initialization step fails
 func NewClient(opts ...Option) (*Client, error) {
-	client := &Client{nonceMap: &sync.Map{}}
+	client := &Client{nonceMap: &sync.Map{}, requestQueue: make(chan struct{}, 500)}
 	for _, opt := range opts {
 		if err := opt(client); err != nil {
 			return client, errors.Wrap(err, "new cess chain client error")
@@ -265,6 +266,8 @@ func (c *Client) SubmitExtrinsic(caller *signature.KeyringPair, call types.Call,
 		hash string
 		err  error
 	)
+	c.requestQueue <- struct{}{}
+	defer func() { <-c.requestQueue }()
 	keypair, err := c.GetCaller(caller)
 	if err != nil {
 		return hash, errors.Wrap(err, "submit extrinsic error")
