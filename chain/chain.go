@@ -123,7 +123,7 @@ func NewLightCessClient(mnemonic string, rpcs []string) (*Client, error) {
 //	Configured Client instance
 //	Error if any initialization step fails
 func NewClient(opts ...Option) (*Client, error) {
-	client := &Client{nonceMap: &sync.Map{}, requestQueue: make(chan struct{}, 500)}
+	client := &Client{nonceMap: &sync.Map{}, requestQueue: make(chan struct{}, 150)}
 	for _, opt := range opts {
 		if err := opt(client); err != nil {
 			return client, errors.Wrap(err, "new cess chain client error")

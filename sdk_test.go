@@ -40,7 +40,7 @@ func TestTransfer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	total,errCount:=3000,&atomic.Int32{}
+	total, errCount := 5000, &atomic.Int32{}
 	wg := sync.WaitGroup{}
 	wg.Add(total)
 	st := time.Now()
@@ -57,7 +57,7 @@ func TestTransfer(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	t.Log("time:", time.Since(st),"total:",total,"error:",errCount.Load())
+	t.Log("time:", time.Since(st), "total:", total, "error:", errCount.Load())
 }
 
 func TestUplaodWithPre(t *testing.T) {
@@ -262,7 +262,7 @@ func TestUploadDataToGateway(t *testing.T) {
 					return
 				}
 				st := time.Now()
-				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+12000), reader, false)
+				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+2000), reader, false)
 				if err != nil {
 					errCounter.Add(1)
 					t.Log(err)
