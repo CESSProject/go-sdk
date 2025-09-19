@@ -41,7 +41,11 @@ type ParsedEvent struct {
 //   - ParsedBlock: Structured block data with extrinsics and events
 //   - error: Wrapped error containing original error context
 func (c *Client) ParseBlockDataWithBlockNumber(block uint32) (ParsedBlock, error) {
-	hash, err := c.RPC.Chain.GetBlockHash(uint64(block))
+	conn, err := c.connMg.GetConn()
+	if err != nil {
+		return ParsedBlock{}, errors.Wrap(err, "parse block data with block number error")
+	}
+	hash, err := conn.RPC.Chain.GetBlockHash(uint64(block))
 	if err != nil {
 		return ParsedBlock{}, errors.Wrap(err, "parse block data with block number error")
 	}
@@ -75,7 +79,11 @@ func (c *Client) ParseBlockData(hash types.Hash) (ParsedBlock, error) {
 	parsedBlock := ParsedBlock{
 		Hash: hash,
 	}
-	block, err := c.RPC.Chain.GetBlock(hash)
+	conn, err := c.connMg.GetConn()
+	if err != nil {
+		return parsedBlock, errors.Wrap(err, "parse block data error")
+	}
+	block, err := conn.RPC.Chain.GetBlock(hash)
 	if err != nil {
 		return parsedBlock, errors.Wrap(err, "parse block data error")
 	}

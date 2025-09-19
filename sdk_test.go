@@ -164,7 +164,11 @@ func TestSdkEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := cli.SubstrateAPI.RPC.Chain.SubscribeNewHeads()
+	conn, err := cli.GetConnectionClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := conn.RPC.Chain.SubscribeNewHeads()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +181,7 @@ func TestSdkEvents(t *testing.T) {
 	for {
 		select {
 		case header := <-sub.Chan():
-			hash, err := cli.SubstrateAPI.RPC.Chain.GetBlockHash(uint64(header.Number))
+			hash, err := conn.RPC.Chain.GetBlockHash(uint64(header.Number))
 			if err != nil {
 				t.Log(err)
 				continue
@@ -262,7 +266,7 @@ func TestUploadDataToGateway(t *testing.T) {
 					return
 				}
 				st := time.Now()
-				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+2000), reader, false)
+				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+20000), reader, false)
 				if err != nil {
 					errCounter.Add(1)
 					t.Log(err)

@@ -23,14 +23,18 @@ func (c *Client) QueryBlockNumber(blockhash string) (uint32, error) {
 		h     types.Hash
 		err   error
 	)
+	conn, err := c.connMg.GetConn()
+	if err != nil {
+		return 0, errors.Wrap(err, "query block number error")
+	}
 	if blockhash != "" {
 		err = codec.DecodeFromHex(blockhash, &h)
 		if err != nil {
 			return 0, errors.Wrap(err, "query block number error")
 		}
-		block, err = c.RPC.Chain.GetBlock(h)
+		block, err = conn.RPC.Chain.GetBlock(h)
 	} else {
-		block, err = c.RPC.Chain.GetBlockLatest()
+		block, err = conn.RPC.Chain.GetBlockLatest()
 	}
 	if err != nil {
 		return 0, errors.Wrap(err, "query block number error")

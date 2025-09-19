@@ -1,8 +1,9 @@
 package chain
 
 import (
+	"context"
 	"fmt"
-	"math/rand"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,11 +22,13 @@ import (
 
 type Client struct {
 	Rpcs     []string
+	ConnNum  int
 	nonceMap *sync.Map
 	KeyringManager
 	GenesisBlockHash types.Hash
 	RuntimeVersion   *types.RuntimeVersion
-	*rpc.SubstrateAPI
+	// *rpc.SubstrateAPI
+	connMg        *ConnManager
 	Retriever     retriever.EventRetriever
 	Timeout       time.Duration
 	Metadata      *types.Metadata
@@ -34,6 +37,82 @@ type Client struct {
 }
 
 type Option func(*Client) error
+
+type ConnManager struct {
+	rpcs    []string
+	connNum int
+	index   *atomic.Uint32
+	conns   []*rpc.SubstrateAPI
+}
+
+func NewConnManager(rpcs []string, connNum int) (*ConnManager, error) {
+	if connNum <= 0 || connNum > 128 {
+		connNum = 4
+	}
+	cm := &ConnManager{
+		rpcs:    rpcs,
+		connNum: connNum,
+		index:   &atomic.Uint32{},
+	}
+	err := cm.initConns()
+	return cm, errors.Wrap(err, "new connection manager error")
+}
+
+func (cm *ConnManager) initConns() error {
+	lens := len(cm.rpcs)
+	if lens < 1 || cm.connNum < 1 {
+		return errors.New("params not initialized")
+	}
+	cm.conns = make([]*rpc.SubstrateAPI, cm.connNum)
+	for i := range cm.connNum {
+		cli, err := rpc.NewSubstrateAPI(cm.rpcs[i%lens])
+		if err != nil {
+			for j := range lens {
+				cli, err = rpc.NewSubstrateAPI(cm.rpcs[j])
+				if err == nil {
+					break
+				}
+			}
+			if err != nil {
+				return err
+			}
+		}
+		cm.conns[i] = cli
+	}
+	return nil
+}
+
+func (cm *ConnManager) GetConn() (*rpc.SubstrateAPI, error) {
+	if len(cm.conns) <= 0 {
+		return nil, errors.New("no connection available")
+	}
+	return cm.conns[(cm.index.Add(1)-1)%uint32(cm.connNum)], nil
+}
+
+func (cm *ConnManager) RunConnRefreshServer(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	for range ticker.C {
+		for i, conn := range cm.conns {
+			if _, err := conn.RPC.Chain.GetBlockLatest(); err == nil {
+				continue
+			}
+			cli, err := rpc.NewSubstrateAPI(cm.rpcs[i%len(cm.rpcs)])
+			if err == nil {
+				cm.conns[i] = cli
+				continue
+			}
+			log.Println(fmt.Errorf("[chain client refresh] reconnecting to RPC %s failed: %v", cm.rpcs[i%len(cm.rpcs)], err))
+			for j := range len(cm.rpcs) {
+				cli, err = rpc.NewSubstrateAPI(cm.rpcs[j])
+				if err == nil {
+					cm.conns[i] = cli
+					break
+				}
+				log.Println(fmt.Errorf("[chain client refresh] reconnecting to RPC %s failed: %v", cm.rpcs[j], err))
+			}
+		}
+	}
+}
 
 // OptionWithRpcs configures the client with a list of RPC endpoints.
 // Parameters:
@@ -46,6 +125,16 @@ type Option func(*Client) error
 func OptionWithRpcs(rpcs []string) Option {
 	return func(c *Client) error {
 		c.Rpcs = rpcs
+		return nil
+	}
+}
+
+func OptionWithConnNum(num int) Option {
+	return func(c *Client) error {
+		if num <= 0 || num > 128 {
+			num = 4
+		}
+		c.ConnNum = num
 		return nil
 	}
 }
@@ -129,25 +218,34 @@ func NewClient(opts ...Option) (*Client, error) {
 			return client, errors.Wrap(err, "new cess chain client error")
 		}
 	}
-	err := client.RefreshSubstrateApi(true)
+	// err := client.RefreshSubstrateApi(true)
+	// if err != nil {
+	// 	return client, errors.Wrap(err, "new cess chain client error")
+	// }
+	mg, err := NewConnManager(client.Rpcs, client.ConnNum)
 	if err != nil {
 		return client, errors.Wrap(err, "new cess chain client error")
 	}
-	client.Metadata, err = client.RPC.State.GetMetadataLatest()
+	client.connMg = mg
+	conn, err := mg.GetConn()
 	if err != nil {
 		return client, errors.Wrap(err, "new cess chain client error")
 	}
-	client.GenesisBlockHash, err = client.RPC.Chain.GetBlockHash(0)
+	client.Metadata, err = conn.RPC.State.GetMetadataLatest()
 	if err != nil {
 		return client, errors.Wrap(err, "new cess chain client error")
 	}
-	client.RuntimeVersion, err = client.RPC.State.GetRuntimeVersionLatest()
+	client.GenesisBlockHash, err = conn.RPC.Chain.GetBlockHash(0)
+	if err != nil {
+		return client, errors.Wrap(err, "new cess chain client error")
+	}
+	client.RuntimeVersion, err = conn.RPC.State.GetRuntimeVersionLatest()
 	if err != nil {
 		return client, errors.Wrap(err, "new cess chain client error")
 	}
 	client.Retriever, err = retriever.NewDefaultEventRetriever(
-		state.NewEventProvider(client.RPC.State),
-		client.RPC.State,
+		state.NewEventProvider(conn.RPC.State),
+		conn.RPC.State,
 	)
 	if err != nil {
 		return client, errors.Wrap(err, "new cess chain client error")
@@ -159,8 +257,12 @@ func NewClient(opts ...Option) (*Client, error) {
 	if client.Timeout <= 0 {
 		client.Timeout = time.Second * 30
 	}
-
+	go mg.RunConnRefreshServer(context.Background())
 	return client, nil
+}
+
+func (c *Client)GetConnectionClient()(*rpc.SubstrateAPI,error){
+	return c.connMg.GetConn()
 }
 
 // ParseSystemEventError converts a module error into a human-readable error message.
@@ -182,68 +284,6 @@ func (c *Client) ParseSystemEventError(t types.ModuleError) error {
 		return errors.Wrap(errors.New("unknown event type"), "extrinsic failed")
 	}
 	return errors.Wrap(fmt.Errorf("%s: %s", e.Name, e.Value), "extrinsic failed")
-}
-
-// NewSubstrateAPI initializes a new Substrate RPC connection.
-// Uses provided rpcAddr or randomly selects from client's RPC list if empty.
-// Parameters:
-//
-//	rpcAddr - Specific RPC address to connect to (optional)
-//
-// Returns:
-//
-//	Error if connection fails
-func (c *Client) NewSubstrateAPI(rpcAddr string) error {
-	var (
-		err error
-		cli *rpc.SubstrateAPI
-	)
-	if rpcAddr != "" {
-		cli, err = rpc.NewSubstrateAPI(rpcAddr)
-	} else {
-		if len(c.Rpcs) <= 0 {
-			return errors.New("Invalid RPC address")
-		}
-		url := c.Rpcs[rand.Intn(len(c.Rpcs))]
-		cli, err = rpc.NewSubstrateAPI(url)
-	}
-	if err != nil {
-		return err
-	}
-	c.SubstrateAPI = cli
-	return nil
-}
-
-// RefreshSubstrateApi reconnects to RPC endpoints, optionally shuffling the list.
-// Attempts to connect to all RPCs until successful connection with valid metadata.
-// Parameters:
-//
-//	r - Whether to shuffle RPC list before connection attempts
-//
-// Returns:
-//
-//	Error if all RPC connections fail
-func (c *Client) RefreshSubstrateApi(r bool) error {
-	var err error
-	count, lens := 1, len(c.Rpcs)
-	for r && count < lens {
-		i, j := rand.Intn(lens), rand.Intn(lens)
-		if i == j {
-			continue
-		}
-		c.Rpcs[i], c.Rpcs[j] = c.Rpcs[j], c.Rpcs[i]
-		count++
-	}
-	for _, rpc := range c.Rpcs {
-		if err = c.NewSubstrateAPI(rpc); err == nil {
-			c.Metadata, err = c.RPC.State.GetMetadataLatest()
-			if err != nil {
-				continue
-			}
-			return nil
-		}
-	}
-	return errors.Wrap(err, "refresh substrate api error")
 }
 
 // SubmitExtrinsic signs and submits an extrinsic to the blockchain network.
@@ -272,9 +312,13 @@ func (c *Client) SubmitExtrinsic(caller *signature.KeyringPair, call types.Call,
 	if err != nil {
 		return hash, errors.Wrap(err, "submit extrinsic error")
 	}
+	conn, err := c.connMg.GetConn()
+	if err != nil {
+		return hash, errors.Wrap(err, "submit extrinsic error")
+	}
 
 	ext := types.NewExtrinsic(call)
-	nonce, err := c.GetCallerNonce(&keypair)
+	nonce, err := c.GetCallerNonce(&keypair, conn)
 	if err != nil {
 		c.PutCaller(&keypair)
 		return hash, errors.Wrap(err, "submit extrinsic error")
@@ -297,11 +341,10 @@ func (c *Client) SubmitExtrinsic(caller *signature.KeyringPair, call types.Call,
 	}
 
 	c.PutCaller(&keypair)
-
-	sub, err := c.RPC.Author.SubmitAndWatchExtrinsic(ext)
+	sub, err := conn.RPC.Author.SubmitAndWatchExtrinsic(ext)
 	if err != nil {
 		if strings.Contains(err.Error(), "Priority is too low") {
-			c.UpdateCallerNonce(&keypair)
+			c.UpdateCallerNonce(&keypair, conn)
 		}
 		return hash, errors.Wrap(err, "submit extrinsic error")
 	}
@@ -368,15 +411,19 @@ func QueryStorage[T any](c *Client, block uint32, prefix, method string, args ..
 	if err != nil {
 		return data, errors.Wrap(err, "query storage error")
 	}
+	conn, err := c.connMg.GetConn()
+	if err != nil {
+		return data, errors.Wrap(err, "query storage error")
+	}
 	if block == 0 {
-		ok, err = c.RPC.State.GetStorageLatest(key, &data)
+		ok, err = conn.RPC.State.GetStorageLatest(key, &data)
 	} else {
 		var hash types.Hash
-		hash, err = c.RPC.Chain.GetBlockHash(uint64(block))
+		hash, err = conn.RPC.Chain.GetBlockHash(uint64(block))
 		if err != nil {
 			return data, errors.Wrap(err, "query storage error")
 		}
-		ok, err = c.RPC.State.GetStorage(key, &data, hash)
+		ok, err = conn.RPC.State.GetStorage(key, &data, hash)
 	}
 	if err != nil {
 		return data, errors.Wrap(err, "query storage error")
@@ -407,19 +454,23 @@ func QueryStorages[T any](c *Client, block uint32, prefix, method string) ([]T, 
 		set   []types.StorageChangeSet
 		datas []T
 	)
-	keys, err = c.RPC.State.GetKeysLatest(createPrefixedKey(method, prefix))
+	conn, err := c.connMg.GetConn()
+	if err != nil {
+		return datas, errors.Wrap(err, "query storages error")
+	}
+	keys, err = conn.RPC.State.GetKeysLatest(createPrefixedKey(method, prefix))
 	if err != nil {
 		return datas, errors.Wrap(err, "query storages error")
 	}
 	if block == 0 {
-		set, err = c.RPC.State.QueryStorageAtLatest(keys)
+		set, err = conn.RPC.State.QueryStorageAtLatest(keys)
 	} else {
 		var hash types.Hash
-		hash, err = c.RPC.Chain.GetBlockHash(uint64(block))
+		hash, err = conn.RPC.Chain.GetBlockHash(uint64(block))
 		if err != nil {
 			return datas, errors.Wrap(err, "query storages error")
 		}
-		set, err = c.RPC.State.QueryStorageAt(keys, hash)
+		set, err = conn.RPC.State.QueryStorageAt(keys, hash)
 	}
 
 	if err != nil {
@@ -466,7 +517,7 @@ func (c *Client) PutCaller(caller *signature.KeyringPair) {
 	}
 }
 
-func (c *Client) GetCallerNonce(caller *signature.KeyringPair) (uint64, error) {
+func (c *Client) GetCallerNonce(caller *signature.KeyringPair, conn *rpc.SubstrateAPI) (uint64, error) {
 	if caller == nil {
 		return 0, errors.New("invalid caller")
 	}
@@ -477,13 +528,13 @@ func (c *Client) GetCallerNonce(caller *signature.KeyringPair) (uint64, error) {
 		}
 		return noncer.Add(1) - 1, nil
 	}
-	if err := c.UpdateCallerNonce(caller); err != nil {
+	if err := c.UpdateCallerNonce(caller, conn); err != nil {
 		return 0, err
 	}
-	return c.GetCallerNonce(caller)
+	return c.GetCallerNonce(caller, conn)
 }
 
-func (c *Client) UpdateCallerNonce(caller *signature.KeyringPair) error {
+func (c *Client) UpdateCallerNonce(caller *signature.KeyringPair, conn *rpc.SubstrateAPI) error {
 	if caller == nil {
 		return errors.New("invalid caller")
 	}
@@ -493,7 +544,7 @@ func (c *Client) UpdateCallerNonce(caller *signature.KeyringPair) error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.RPC.State.GetStorageLatest(key, &accountInfo); err != nil {
+	if _, err := conn.RPC.State.GetStorageLatest(key, &accountInfo); err != nil {
 		return err
 	}
 	act, loaded := c.nonceMap.LoadOrStore(caller.Address, &atomic.Uint64{})
