@@ -20,6 +20,7 @@ import (
 	"github.com/centrifuge/go-substrate-rpc-client/v4/registry"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
 	"github.com/klauspost/reedsolomon"
+	"github.com/panjf2000/ants"
 	"github.com/pkg/errors"
 )
 
@@ -40,12 +41,17 @@ func TestTransfer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	total, errCount := 5000, &atomic.Int32{}
+	total, errCount := 4000, &atomic.Int32{}
 	wg := sync.WaitGroup{}
 	wg.Add(total)
 	st := time.Now()
+	pool, err := ants.NewPool(500)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := range total {
-		go func(i int) {
+		idx := i
+		pool.Submit(func() {
 			defer wg.Done()
 			tx, err := cli.TransferToken("cXjTYBWUY68uGG2t3ShAhmLtNhz3WdBfXrYn4XaQYg5pKLZcF", "1000000000000000000", nil, nil)
 			if err != nil {
@@ -53,8 +59,8 @@ func TestTransfer(t *testing.T) {
 				errCount.Add(1)
 				return
 			}
-			t.Log(i, "success,block hash:", tx)
-		}(i)
+			t.Log(idx, "success,block hash:", tx)
+		})
 	}
 	wg.Wait()
 	t.Log("time:", time.Since(st), "total:", total, "error:", errCount.Load())
