@@ -1,7 +1,6 @@
 package retriever
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/CESSProject/cess-crypto/gosdk"
@@ -25,8 +23,8 @@ import (
 const (
 	GATEWAY_GENTOKEN_URL      = "/gateway/gentoken"
 	GATEWAY_UPLOADFILE_URL    = "/gateway/upload/file"
-	GATEWAY_PARTUPLOAD_URL    = "/gateway/part-upload"
-	GATEWAY_UPLOADPART_URL    = "/gateway/upload/part"
+	GATEWAY_BATCHUPLOAD_URL   = "/gateway/upload/batch/file"
+	GATEWAY_BATCHREQUEST_URL  = "/gateway/upload/batch/request"
 	GATEWAY_GETFILE_URL       = "/gateway/download"
 	RETRIEVER_QUERYDATA_URL   = "/querydata"
 	RETRIEVER_FETCHDATA_URL   = "/cache-fetch"
@@ -53,18 +51,18 @@ type FileInfo struct {
 	Fragments [][]string `json:"fragments"`
 }
 
-type PartsInfo struct {
-	ShadowHash string    `json:"shadow_hash,omitempty"`
-	FileName   string    `json:"file_name,omitempty"`
-	DirName    string    `json:"dir_name,omitempty"`
-	Archive    string    `json:"archive,omitempty"`
-	Territory  string    `json:"territory,omitempty"`
-	Parts      []string  `json:"parts,omitempty"`
-	PartsCount int       `json:"parts_count,omitempty"`
-	TotalParts int       `json:"total_parts,omitempty"`
-	PartSize   int64     `json:"-"`
-	TotalSize  int64     `json:"total_size,omitempty"`
-	UpdateDate time.Time `json:"update_date,omitempty"`
+type BatchFilesInfo struct {
+	Hash         string    `json:"hash,omitempty"`
+	FileName     string    `json:"file_name,omitempty"`
+	Owner        []byte    `json:"owner,omitempty"`
+	Territory    string    `json:"territory,omitempty"`
+	FilePath     string    `json:"-"`
+	UploadedSize int64     `json:"uploaded_size,omitempty"`
+	TotalSize    int64     `json:"total_size,omitempty"`
+	AsyncUpload  bool      `json:"async_upload,omitempty"`
+	NoTxProxy    bool      `json:"no_tx_proxy,omitempty"`
+	Encrypt      bool      `json:"encrypt,omitempty"`
+	UpdateDate   time.Time `json:"update_date,omitempty"`
 }
 
 // GenReEncryptionKey generates a re-encryption key and corresponding public key using Schnorrkel scheme.
@@ -377,305 +375,118 @@ func AsyncUploadFile(baseUrl, token, territory, filename string, file io.Reader,
 	return info, nil
 }
 
-func uploadFileParts(baseUrl, token, fpath string, info *PartsInfo, async, noProxy, encrypt bool) ([]byte, error) {
+// RequestBatchUpload initiates a batch file upload session.
+// It sends a POST request to the batch upload endpoint with file metadata.
+// Parameters:
+//
+//	baseUrl - The base URL of the gateway.
+//	token - The access token for authentication.
+//	territory - The territory where the file will be uploaded.
+//	filename - The name of the file to be uploaded.
+//	fileSize - The total size of the file in bytes.
+//	encrypt - Whether the data needs to be encrypted.
+//	asyncUpload - Whether to upload asynchronously.
+//	noTxProxy - Whether to bypass transaction proxy.
+//
+// Returns:
+//
+//	string - A unique hash identifier for the upload session.
+//	error - An error if the session initialization fails.
+func RequestBatchUpload(baseUrl, token, territory, filename string, fileSize int64, encrypt, asyncUpload, noTxProxy bool) (string, error) {
+	jbytes, err := json.Marshal(BatchFilesInfo{
+		FileName:    filename,
+		Territory:   territory,
+		TotalSize:   fileSize,
+		Encrypt:     encrypt,
+		AsyncUpload: asyncUpload,
+		NoTxProxy:   noTxProxy,
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "request batch upload file error")
+	}
+	headers := map[string]string{
+		"Content-Type": "application/json",
+		"token":        fmt.Sprintf("Bearer %s", token),
+	}
+	u, err := url.JoinPath(baseUrl, GATEWAY_BATCHREQUEST_URL)
+	if err != nil {
+		return "", errors.Wrap(err, "upload user file error")
+	}
+	body, err := SendHttpRequest(http.MethodPost, u, headers, bytes.NewBuffer(jbytes))
+	if err != nil {
+		return "", errors.Wrap(err, "upload user file error")
+	}
+	var (
+		hash string
+		resp = Response{Data: &hash}
+	)
+	if err = json.Unmarshal(body, &resp); err != nil {
+		return "", errors.Wrap(err, "upload user file error")
+	}
+	return hash, nil
+}
+
+// BatchUploadFile uploads a specific byte range of a file as part of a batch upload session.
+// It sends a multipart POST request with the specified byte range to the batch upload endpoint.
+// Parameters:
+//
+//	baseUrl - The base URL of the gateway.
+//	token - The access token for authentication.
+//	hash - The unique hash identifier obtained from RequestBatchUpload.
+//	reader - The io.ReaderAt to read the file content from.
+//	start - The starting byte position of the range (inclusive).
+//	end - The ending byte position of the range (exclusive).
+//
+// Returns:
+//
+//	string - The upload result or confirmation.
+//	error - An error if the chunk upload fails.
+func BatchUploadFile(baseUrl, token, hash string, reader io.ReaderAt, start, end int64) (string, error) {
 	var (
 		err    error
 		buffer bytes.Buffer
 	)
 	writer := multipart.NewWriter(&buffer)
-	writer.WriteField("shadowhash", info.ShadowHash)
-	writer.WriteField("partid", fmt.Sprint(info.PartsCount))
-	if async {
-		writer.WriteField("async", "true")
-	}
-	if noProxy {
-		writer.WriteField("noProxy", "true")
-	}
-	if encrypt {
-		writer.WriteField("encrypt", "true")
-	}
-	part, err := writer.CreateFormFile("file", info.Parts[info.PartsCount])
+	part, err := writer.CreateFormFile("file", "part")
 	if err != nil {
-		return nil, errors.Wrap(err, "upload file part error")
+		return "", errors.Wrap(err, "batch upload file error")
 	}
-
-	if info.DirName != "" {
-		file, err := os.Open(filepath.Join(fpath, info.Parts[info.PartsCount]))
-		if err != nil {
-			return nil, errors.Wrap(err, "upload file part error")
-		}
-		defer file.Close()
-		_, err = io.Copy(part, file)
-		if err != nil {
-			return nil, errors.Wrap(err, "upload file part error")
-		}
-
-	} else {
-		file, err := os.Open(fpath)
-		if err != nil {
-			return nil, errors.Wrap(err, "upload file part error")
-		}
-		defer file.Close()
-		size := info.PartSize
-		_, err = file.Seek(int64(info.PartsCount)*size, io.SeekStart)
-		if err != nil {
-			return nil, errors.Wrap(err, "upload file part error")
-		}
-		if int64(info.PartsCount+1)*size > info.TotalSize {
-			size = info.TotalSize % size
-		}
-		_, err = io.CopyN(part, file, size)
-		if err != nil {
-			return nil, errors.Wrap(err, "upload file part error")
-		}
-		if err := writer.Close(); err != nil {
-			return nil, errors.Wrap(err, "upload file part error")
-		}
+	if start >= end || end <= 0 || start < 0 {
+		return "", errors.Wrap(errors.New("bad content bytes range"), "batch upload file error")
 	}
-
+	buf := make([]byte, end-start)
+	n, err := reader.ReadAt(buf, start)
+	if err != nil {
+		return "", errors.Wrap(err, "batch upload file error")
+	}
+	if int64(n) != end-start {
+		return "", errors.Wrap(errors.New("invalid data length"), "batch upload file error")
+	}
+	if _, err = part.Write(buf); err != nil {
+		return "", errors.Wrap(err, "batch upload file error")
+	}
+	if err = writer.Close(); err != nil {
+		return "", errors.Wrap(err, "batch upload file error")
+	}
 	headers := map[string]string{
 		"Content-Type": writer.FormDataContentType(),
 		"token":        fmt.Sprintf("Bearer %s", token),
+		"Range":        fmt.Sprintf("bytes=%d-%d", start, end),
+		"hash":         hash,
 	}
-	u, err := url.JoinPath(baseUrl, GATEWAY_UPLOADPART_URL)
+	u, err := url.JoinPath(baseUrl, GATEWAY_BATCHUPLOAD_URL)
 	if err != nil {
-		return nil, errors.Wrap(err, "upload file part error")
+		return "", errors.Wrap(err, "batch upload file error")
 	}
 	body, err := SendHttpRequest(http.MethodPost, u, headers, &buffer)
 	if err != nil {
-		return nil, errors.Wrap(err, "upload file part error")
+		return "", errors.Wrap(err, "batch upload file error")
 	}
-	info.PartsCount++
-	return body, nil
-}
-
-// UploadFileParts uploads file parts to the specified territory.
-// It sends a POST request to the "/gateway/upload/part" endpoint with the necessary parameters.
-// Parameters:
-//
-//	baseUrl - The base URL of the gateway.
-//	token - The access token for authentication.
-//	fpath - The path of the file to be uploaded.
-//	info - Information about the file parts to be uploaded.
-//	encrypt - Whether the data needs to be encrypted (using proxy re-encryption technology)
-//
-// Returns:
-//
-//	string - The file identifier (FID) if the upload is successful.
-//	error - An error if the upload fails.
-func UploadFileParts(baseUrl, token, fpath string, info *PartsInfo, encrypt bool) (string, error) {
-	var (
-		fid string
-	)
-	body, err := uploadFileParts(baseUrl, token, fpath, info, false, false, encrypt)
-	if err != nil {
-		return fid, errors.Wrap(err, "synchronous upload failed")
+	res := Response{}
+	if err = json.Unmarshal(body, &res); err != nil {
+		return "", errors.Wrap(err, "batch upload file error")
 	}
-	resp := Response{}
-	if err = json.Unmarshal(body, &resp); err != nil {
-		return fid, errors.Wrap(err, "synchronous upload failed")
-	}
-	fid = fmt.Sprint(resp.Data)
-	return fid, nil
-}
-
-// AsyncUploadFileParts uploads file parts asynchronously to the specified territory.
-// It sends a POST request to the "/gateway/upload/part" endpoint with the necessary parameters.
-// Parameters:
-//
-//	baseUrl - The base URL of the gateway.
-//	token - The access token for authentication.
-//	fpath - The path of the file to be uploaded.
-//	info - Information about the file parts to be uploaded.
-//	noProxy - Whether to not create file orders through OSS proxy.
-//	encrypt - Whether the data needs to be encrypted (using proxy re-encryption technology)
-//
-// Returns:
-//
-//	FileInfo - Information about the uploaded file.
-//	error - An error if the upload fails.
-func AsyncUploadFileParts(baseUrl, token, fpath string, info *PartsInfo, noProxy, encrypt bool) (FileInfo, error) {
-	var (
-		finfo FileInfo
-		resp  Response
-		pid   string
-	)
-	body, err := uploadFileParts(baseUrl, token, fpath, info, true, false, encrypt)
-	if err != nil {
-		return finfo, errors.Wrap(err, "asynchronous upload failed")
-	}
-	if info.PartsCount == info.TotalParts && noProxy {
-		resp.Data = &finfo
-	} else {
-		resp.Data = &pid
-	}
-	if err = json.Unmarshal(body, &resp); err != nil {
-		return finfo, errors.Wrap(err, "asynchronous upload failed")
-	}
-	if pid != "" && finfo.Fid == "" {
-		finfo.Fid = pid
-	}
-	return finfo, nil
-}
-
-// RequestToUploadParts requests to upload file parts to the specified territory.
-// It sends a POST request to the "/gateway/part-upload" endpoint with the necessary parameters.
-// Parameters:
-//
-//	baseUrl - The base URL of the gateway.
-//	token - The access token for authentication.
-//	fpath - The path of the file to be uploaded.
-//	territory - The territory to which the file will be uploaded.
-//	filename - The name of the file to be uploaded.
-//	achive - The archive name of the file to be uploaded.
-//	partSize - The size of each part to be uploaded.
-//
-// Returns:
-//
-//	PartsInfo - Information about the file parts to be uploaded.
-//	error - An error if the request fails.
-func RequestToUploadParts(baseUrl, fpath, token, territory, filename, achive string, partSize int64) (PartsInfo, error) {
-	var info PartsInfo
-	fs, err := os.Stat(fpath)
-	if err != nil {
-		return info, errors.Wrap(err, "request to upload file parts error")
-	}
-	if fs.IsDir() {
-		info, err = CreatePartsInfoForDir(fpath, filename, achive)
-		if err != nil {
-			return info, errors.Wrap(err, "request to upload file parts error")
-		}
-	} else {
-		info, err = CreatePartsInfoForFile(fpath, filename, fs.Size(), partSize)
-		if err != nil {
-			return info, errors.Wrap(err, "request to upload file parts error")
-		}
-	}
-	info.Territory = territory
-	info.UpdateDate = time.Now()
-	headers := map[string]string{
-		"Content-Type": "application/json",
-		"token":        fmt.Sprintf("Bearer %s", token),
-	}
-	u, err := url.JoinPath(baseUrl, GATEWAY_PARTUPLOAD_URL)
-	if err != nil {
-		return info, errors.Wrap(err, "request to upload file parts error")
-	}
-	jbytes, err := json.Marshal(info)
-	if err != nil {
-		return info, errors.Wrap(err, "request to upload file parts error")
-	}
-	_, err = SendHttpRequest(http.MethodPost, u, headers, bytes.NewBuffer(jbytes))
-	return info, errors.Wrap(err, "request to upload file parts error")
-}
-
-// CreatePartsInfoForFile creates parts information for a file.
-// It calculates the hash of each part and the shadow hash of the file.
-// Parameters:
-//
-//	fpath - The path of the file.
-//	filename - The name of the file.
-//	fileSize - The size of the file.
-//	partSize - The size of each part.
-//
-// Returns:
-//
-//	PartsInfo - Information about the file parts.
-//	error - An error if the file cannot be opened or read.
-func CreatePartsInfoForFile(fpath, filename string, fileSize, partSize int64) (PartsInfo, error) {
-
-	if partSize <= DEFAULT_PART_SIZE {
-		partSize = DEFAULT_PART_SIZE
-	}
-	if partSize > fileSize {
-		partSize = fileSize
-	}
-	if filename == "" {
-		filename = filepath.Base(fpath)
-	}
-	info := PartsInfo{
-		FileName:   filename,
-		TotalSize:  fileSize,
-		PartSize:   partSize,
-		TotalParts: int((fileSize + (partSize - fileSize%partSize)) / partSize),
-	}
-
-	f, err := os.Open(fpath)
-	if err != nil {
-		return info, errors.Wrap(err, "create parts info for file error")
-	}
-	defer f.Close()
-	reader := bufio.NewReader(f)
-	info.Parts = make([]string, 0, info.TotalParts)
-	hash := sha256.New()
-	buf := make([]byte, partSize)
-	for i := 0; i < info.TotalParts; i++ {
-		n, err := reader.Read(buf)
-		if err != nil {
-			return info, errors.Wrap(err, "create parts info for file error")
-		}
-		partHash := sha256.Sum256(buf[:n])
-		info.Parts = append(info.Parts, hex.EncodeToString(partHash[:]))
-		if n >= 32 {
-			hash.Write(buf[:32])
-		} else {
-			hash.Write(buf[:n])
-			hash.Write(make([]byte, 32-n))
-		}
-	}
-	info.ShadowHash = hex.EncodeToString(hash.Sum(nil))
-	return info, nil
-}
-
-// CreatePartsInfoForDir creates parts information for a directory.
-// It calculates the hash of each file in the directory and the shadow hash of the directory.
-// Parameters:
-//
-//	fpath - The path of the directory.
-//	dirname - The name of the directory.
-//	archive - The name of the archive.
-//
-// Returns:
-//
-//	PartsInfo - Information about the directory parts.
-//	error - An error if the directory cannot be opened or read.
-func CreatePartsInfoForDir(fpath, dirname, archive string) (PartsInfo, error) {
-	info := PartsInfo{
-		DirName: dirname,
-		Archive: archive,
-	}
-	entries, err := os.ReadDir(fpath)
-	if err != nil {
-		return info, errors.Wrap(err, "create parts info for dir error")
-	}
-	info.Parts = make([]string, 0, len(entries))
-	hash := sha256.New()
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		f, err := os.Open(filepath.Join(fpath, entry.Name()))
-		if err != nil {
-			return info, errors.Wrap(err, "create parts info for dir error")
-		}
-		buf := make([]byte, 32)
-		if _, err = f.Read(buf); err != nil {
-			f.Close()
-			return info, errors.Wrap(err, "create parts info for dir error")
-		}
-		stat, err := f.Stat()
-		if err != nil {
-			f.Close()
-			return info, errors.Wrap(err, "create parts info for dir error")
-		}
-		hash.Write(buf)
-		info.Parts = append(info.Parts, f.Name())
-		info.TotalParts++
-		info.TotalSize += stat.Size()
-		f.Close()
-	}
-	info.ShadowHash = hex.EncodeToString(hash.Sum(nil))
-	return info, nil
+	return fmt.Sprint(res.Data), nil
 }
 
 func SendHttpRequest(method, url string, headers map[string]string, dataReader *bytes.Buffer) ([]byte, error) {

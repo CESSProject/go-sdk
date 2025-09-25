@@ -242,6 +242,67 @@ func TestSdkEvents(t *testing.T) {
 	}
 }
 
+func TestBatchUploadRequest(t *testing.T) {
+	baseUrl := "http://154.194.34.195:1306"
+	mnemonic := "skill income exile ethics sick excess sea deliver medal junk update fault"
+	message := "123456"
+	territory := "test1"
+	account := "cXkGyoXtxnK2Zbw8X5gArXi9VGqKqE7b517muih45ds9Ebdno"
+	sign, err := retriever.SignedSR25519WithMnemonic(mnemonic, []byte(message))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("token", token)
+	hash, err := retriever.RequestBatchUpload(baseUrl, token, territory, "testfile1", 4096*1024, false, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(hash)
+}
+
+func TestBatchUploadFile(t *testing.T) {
+	baseUrl := "http://154.194.34.195:1306"
+	mnemonic := "skill income exile ethics sick excess sea deliver medal junk update fault"
+	message := "123456"
+	account := "cXkGyoXtxnK2Zbw8X5gArXi9VGqKqE7b517muih45ds9Ebdno"
+	hash := "a8e2fd9a3e237efe3ae8411fb3e3562ec1570fbac88acd9160b18bd375674b67"
+	sign, err := retriever.SignedSR25519WithMnemonic(mnemonic, []byte(message))
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := bytes.NewBuffer(nil)
+	reader, err := GenRandomBlockData(writer, 4096*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create("./testfile1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(f, reader); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	for size := int64(512 * 1024); size < 4096*1024; size += 512 * 1024 {
+		res, err := retriever.BatchUploadFile(baseUrl, token, hash, f, size, size+512*1024)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Log("result:", res)
+	}
+}
+
+
 func TestUploadDataToGateway(t *testing.T) {
 	baseUrl := "http://154.194.34.195:1306"
 	mnemonic := "skill income exile ethics sick excess sea deliver medal junk update fault"
@@ -272,7 +333,7 @@ func TestUploadDataToGateway(t *testing.T) {
 					return
 				}
 				st := time.Now()
-				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+20000), reader, false)
+				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+4000), reader, false)
 				if err != nil {
 					errCounter.Add(1)
 					t.Log(err)
