@@ -333,7 +333,7 @@ func TestUploadDataToGateway(t *testing.T) {
 					return
 				}
 				st := time.Now()
-				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+4000), reader, false)
+				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+60000), reader, false)
 				if err != nil {
 					errCounter.Add(1)
 					t.Log(err)

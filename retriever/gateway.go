@@ -13,9 +13,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/CESSProject/cess-crypto/gosdk"
 	"github.com/CESSProject/go-sdk/chain"
-	"github.com/ChainSafe/go-schnorrkel"
 	"github.com/pkg/errors"
 	"github.com/vedhavyas/go-subkey/sr25519"
 )
@@ -38,6 +36,12 @@ type Response struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 	Data any    `json:"data"`
+}
+
+type ReencryptReq struct {
+	Did     string `json:"did"`
+	Capsule []byte `json:"capsule"`
+	Rk      []byte `json:"rk"`
 }
 
 type FileInfo struct {
@@ -65,48 +69,50 @@ type BatchFilesInfo struct {
 	UpdateDate   time.Time `json:"update_date,omitempty"`
 }
 
-// GenReEncryptionKey generates a re-encryption key and corresponding public key using Schnorrkel scheme.
-// This implements proxy re-encryption mechanism for decentralized storage systems.
+// ProxyReEncrypt performs proxy re-encryption by sending a request to the gateway server.
+// This handles remote cryptographic transformation of capsules for decentralized storage access.
 //
 // Parameters:
 //
-//	mnemonic - User's mnemonic phrase for key derivation
-//	pkB      - Recipient's public key bytes (32-byte expected)
+//	baseUrl - Gateway server base URL (e.g., "https://api.example.com")
+//	token   - Authentication token for gateway API access
+//	did     - Decentralized identifier for target data
+//	capsule - Original encrypted capsule bytes (JSON marshaled)
+//	rk      - Re-encryption key bytes (ristretto255 scalar serialization)
 //
 // Returns:
 //
-//	[]byte - Marshaled re-encryption key (rk)
-//	[]byte - Encoded public key bytes for encryption (pkX)
+//	[]byte - Re-encrypted capsule bytes (JSON marshaled)
 //	error  - Possible errors include:
-//	           - Invalid mnemonic phrase
-//	           - Public key deserialization failure
-//	           - Re-encryption key generation failure
-//	           - Key serialization failure
-func GenReEncryptionKey(mnemonic string, pkB []byte) ([]byte, []byte, error) {
-	if len(pkB) != 32 {
-		return nil, nil, errors.Wrap(errors.New("public key length error"), "generate re-encryption key error")
-	}
-	ms, err := schnorrkel.MiniSecretKeyFromMnemonic(mnemonic, "")
+//	           - Invalid URL path construction
+//	           - Request payload serialization failure
+//	           - Gateway communication failure
+//	           - Response payload deserialization failure
+func ProxyReEncrypt(baseUrl, token, did string, capsule, rk []byte) ([]byte, error) {
+	u, err := url.JoinPath(baseUrl, "/gateway/reencrypt")
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "generate re-encryption key error")
+		return nil, errors.Wrap(err, "proxy re-encrypt key error")
 	}
-	secret := ms.ExpandEd25519()
-	var pkbArray [32]byte
-	copy(pkbArray[:], pkB[:32])
-	pubkeyB, err := schnorrkel.NewPublicKey(pkbArray)
+	jbytes, err := json.Marshal(ReencryptReq{
+		Did:     did,
+		Capsule: capsule,
+		Rk:      rk,
+	})
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "generate re-encryption key error")
+		return nil, errors.Wrap(err, "proxy re-encrypt key error")
 	}
-	rk, pkX, err := gosdk.GenReKey(secret, pubkeyB)
+	body, err := SendHttpRequest(http.MethodPost, u, nil, bytes.NewBuffer(jbytes))
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "generate re-encryption key error")
+		return nil, errors.Wrap(err, "proxy re-encrypt key error")
 	}
-	txtRk, err := rk.MarshalText()
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "generate re-encryption key error")
+	newCapsule := []byte{}
+	resp := Response{
+		Data: &newCapsule,
 	}
-	pkxArray := pkX.Encode()
-	return txtRk, pkxArray[:], nil
+	if err = json.Unmarshal(body, &resp); err != nil {
+		return nil, errors.Wrap(err, "proxy re-encrypt key error")
+	}
+	return newCapsule, nil
 }
 
 // DownloadData retrieves data from the gateway and writes it to local file system.
