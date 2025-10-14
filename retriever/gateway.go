@@ -69,6 +69,12 @@ type BatchFilesInfo struct {
 	UpdateDate   time.Time `json:"update_date,omitempty"`
 }
 
+type BatchUploadResp struct {
+	Fid      string   `json:"fid"`
+	ChunkEnd int64    `json:"chunk_end"`
+	FileInfo FileInfo `json:"file_info"`
+}
+
 // ProxyReEncrypt performs proxy re-encryption by sending a request to the gateway server.
 // This handles remote cryptographic transformation of capsules for decentralized storage access.
 //
@@ -445,34 +451,35 @@ func RequestBatchUpload(baseUrl, token, territory, filename string, fileSize int
 //
 // Returns:
 //
-//	string - The upload result or confirmation.
+//	BatchUploadResp - The upload result or confirmation.
 //	error - An error if the chunk upload fails.
-func BatchUploadFile(baseUrl, token, hash string, reader io.ReaderAt, start, end int64) (string, error) {
+func BatchUploadFile(baseUrl, token, hash string, reader io.ReaderAt, start, end int64) (BatchUploadResp, error) {
 	var (
 		err    error
 		buffer bytes.Buffer
+		res    BatchUploadResp
 	)
 	writer := multipart.NewWriter(&buffer)
 	part, err := writer.CreateFormFile("file", "part")
 	if err != nil {
-		return "", errors.Wrap(err, "batch upload file error")
+		return res, errors.Wrap(err, "batch upload file error")
 	}
 	if start >= end || end <= 0 || start < 0 {
-		return "", errors.Wrap(errors.New("bad content bytes range"), "batch upload file error")
+		return res, errors.Wrap(errors.New("bad content bytes range"), "batch upload file error")
 	}
 	buf := make([]byte, end-start)
 	n, err := reader.ReadAt(buf, start)
 	if err != nil {
-		return "", errors.Wrap(err, "batch upload file error")
+		return res, errors.Wrap(err, "batch upload file error")
 	}
 	if int64(n) != end-start {
-		return "", errors.Wrap(errors.New("invalid data length"), "batch upload file error")
+		return res, errors.Wrap(errors.New("invalid data length"), "batch upload file error")
 	}
 	if _, err = part.Write(buf); err != nil {
-		return "", errors.Wrap(err, "batch upload file error")
+		return res, errors.Wrap(err, "batch upload file error")
 	}
 	if err = writer.Close(); err != nil {
-		return "", errors.Wrap(err, "batch upload file error")
+		return res, errors.Wrap(err, "batch upload file error")
 	}
 	headers := map[string]string{
 		"Content-Type": writer.FormDataContentType(),
@@ -482,17 +489,19 @@ func BatchUploadFile(baseUrl, token, hash string, reader io.ReaderAt, start, end
 	}
 	u, err := url.JoinPath(baseUrl, GATEWAY_BATCHUPLOAD_URL)
 	if err != nil {
-		return "", errors.Wrap(err, "batch upload file error")
+		return res, errors.Wrap(err, "batch upload file error")
 	}
 	body, err := SendHttpRequest(http.MethodPost, u, headers, &buffer)
 	if err != nil {
-		return "", errors.Wrap(err, "batch upload file error")
+		return res, errors.Wrap(err, "batch upload file error")
 	}
-	res := Response{}
-	if err = json.Unmarshal(body, &res); err != nil {
-		return "", errors.Wrap(err, "batch upload file error")
+	resp := Response{
+		Data: &res,
 	}
-	return fmt.Sprint(res.Data), nil
+	if err = json.Unmarshal(body, &resp); err != nil {
+		return res, errors.Wrap(err, "batch upload file error")
+	}
+	return res, nil
 }
 
 func SendHttpRequest(method, url string, headers map[string]string, dataReader *bytes.Buffer) ([]byte, error) {

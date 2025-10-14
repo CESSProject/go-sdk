@@ -384,10 +384,12 @@ func (c *Client) SubmitExtrinsic(caller *signature.KeyringPair, call types.Call,
 				continue
 			}
 			hash = status.AsInBlock.Hex()
+			if hash == "" {
+				continue
+			}
 			if eventName == "" {
 				return hash, nil
 			}
-
 			events, err := c.Retriever.GetEvents(status.AsInBlock)
 			if err != nil {
 				return hash, errors.Wrap(err, "submit extrinsic error")
