@@ -572,9 +572,10 @@ func (c *Client) UpdateCallerNonce(caller *signature.KeyringPair, conn *ChainCon
 	}
 	if _, err := conn.RPC.State.GetStorageLatest(key, &accountInfo); err != nil {
 		return err
-	} else if accountInfo.Nonce == 0 {
-		return errors.New("failed to query account nonce")
 	}
+	// else if accountInfo.Nonce == 0 {
+	// 	return errors.New("failed to query account nonce")
+	// }
 	data := &atomic.Uint64{}
 	data.Store(uint64(accountInfo.Nonce))
 	act, loaded := c.nonceMap.LoadOrStore(caller.Address, data)

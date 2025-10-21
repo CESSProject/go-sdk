@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/CESSProject/go-sdk/chain"
@@ -238,16 +239,20 @@ func SignedSR25519WithMnemonic(mnemonic string, msg []byte) ([]byte, error) {
 //
 //	string - The generated access token.
 //	error - An error if the request fails or the response is invalid.
-func GenGatewayAccessToken(baseUrl, message, account string, sign []byte) (string, error) {
+func GenGatewayAccessToken(baseUrl, message, account string, sign []byte, exp time.Duration) (string, error) {
 	var (
 		token  string
 		err    error
 		buffer *bytes.Buffer
 	)
+
 	data := url.Values{
 		"account": {account},
 		"message": {message},
 		"sign":    {hex.EncodeToString(sign)},
+	}
+	if exp > 0 {
+		data.Add("exp", strconv.FormatInt(int64(exp), 10))
 	}
 	dataString := data.Encode()
 	buffer = bytes.NewBufferString(dataString)

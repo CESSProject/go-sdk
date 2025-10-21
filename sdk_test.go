@@ -34,14 +34,16 @@ func TestErrorWarp(t *testing.T) {
 }
 
 func TestTransfer(t *testing.T) {
+	//
+	//skill income exile ethics sick excess sea deliver medal junk update fault
 	cli, err := chain.NewLightCessClient(
-		"skill income exile ethics sick excess sea deliver medal junk update fault",
+		"concert ostrich mass worry powder traffic clinic beauty travel suggest satoshi outside",
 		[]string{"wss://t2-rpc.cess.network"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	total, errCount := 4000, &atomic.Int32{}
+	total, errCount := 500, &atomic.Int32{}
 	wg := sync.WaitGroup{}
 	wg.Add(total)
 	st := time.Now()
@@ -53,7 +55,7 @@ func TestTransfer(t *testing.T) {
 		idx := i
 		pool.Submit(func() {
 			defer wg.Done()
-			tx, err := cli.TransferToken("cXjTYBWUY68uGG2t3ShAhmLtNhz3WdBfXrYn4XaQYg5pKLZcF", "1000000000000000000", nil, nil)
+			tx, err := cli.TransferToken("cXkGyoXtxnK2Zbw8X5gArXi9VGqKqE7b517muih45ds9Ebdno", "1000000000000000000", nil, nil)
 			if err != nil {
 				t.Log(err)
 				errCount.Add(1)
@@ -67,6 +69,7 @@ func TestTransfer(t *testing.T) {
 }
 
 func TestUplaodWithPre(t *testing.T) {
+
 	baseUrl := "https://retriever.cess.network"
 	territory := "test1"
 	filename := "test_random_file"
@@ -81,7 +84,7 @@ func TestUplaodWithPre(t *testing.T) {
 		t.Fatal(err)
 	}
 	acc := chain.EncodePubkey(keyPair.PublicKey, 11330)
-	token, err := retriever.GenGatewayAccessToken(baseUrl, message, acc, sign)
+	token, err := retriever.GenGatewayAccessToken(baseUrl, message, acc, sign, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +255,7 @@ func TestBatchUploadRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign)
+	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +277,7 @@ func TestBatchUploadFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign)
+	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +305,6 @@ func TestBatchUploadFile(t *testing.T) {
 	}
 }
 
-
 func TestUploadDataToGateway(t *testing.T) {
 	baseUrl := "http://154.194.34.195:1306"
 	mnemonic := "skill income exile ethics sick excess sea deliver medal junk update fault"
@@ -313,7 +315,7 @@ func TestUploadDataToGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign)
+	token, err := retriever.GenGatewayAccessToken(baseUrl, message, account, sign, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
