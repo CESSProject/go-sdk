@@ -177,11 +177,17 @@ func OptionWithAccounts(mnemonics []string) Option {
 	return func(c *Client) error {
 		keys := make([]signature.KeyringPair, 0, len(mnemonics))
 		for _, m := range mnemonics {
+			if strings.Trim(m, " ") == "" {
+				continue
+			}
 			key, err := signature.KeyringPairFromSecret(m, 0)
 			if err != nil {
 				return err
 			}
 			keys = append(keys, key)
+		}
+		if len(keys) == 0 {
+			return errors.New("Invalid mnemonics")
 		}
 		c.KeyringManager = NewKeyrings(keys...)
 		return nil

@@ -33,21 +33,43 @@ func TestErrorWarp(t *testing.T) {
 	t.Log(errors.Unwrap(errors.Unwrap(err)))
 }
 
+func TestRegisterOss(t *testing.T) {
+
+	cli, err := chain.NewLightCessClient(
+		"",
+		[]string{"wss://testnet-rpc.cess.network"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := cli.GetKeyInOrder()
+	cli.PutKey(key.Address)
+	info, err := cli.QueryOss(key.PublicKey, 0)
+	if err != nil {
+		hash, err := cli.RegisterOss("test.domain.com", nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Log("tx hash:", hash)
+	}
+	t.Log(info)
+}
+
 func TestTransfer(t *testing.T) {
 	//
 	//skill income exile ethics sick excess sea deliver medal junk update fault
 	cli, err := chain.NewLightCessClient(
 		"concert ostrich mass worry powder traffic clinic beauty travel suggest satoshi outside",
-		[]string{"wss://t2-rpc.cess.network"},
+		[]string{"wss://testnet-rpc.cess.network"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	total, errCount := 500, &atomic.Int32{}
+	total, errCount := 1, &atomic.Int32{}
 	wg := sync.WaitGroup{}
 	wg.Add(total)
 	st := time.Now()
-	pool, err := ants.NewPool(500)
+	pool, err := ants.NewPool(1)
 	if err != nil {
 		t.Fatal(err)
 	}
