@@ -3,6 +3,7 @@ package chain
 import (
 	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types"
+	"github.com/decred/base58"
 	"github.com/pkg/errors"
 )
 
@@ -142,6 +143,29 @@ func (c *Client) RegisterOss(domain string, caller *signature.KeyringPair, event
 	return blockhash, nil
 }
 
+func (c *Client) RegisterOssWithPeerId(domain, peerId string, caller *signature.KeyringPair, event any) (string, error) {
+
+	if domain == "" || len(domain) > 100 {
+		return "", errors.Wrap(errors.New("bad domain"), "register oss error")
+	}
+	var pid [38]types.U8
+	bpid := base58.Decode(peerId)
+	for i := 0; i < len(pid) && i < len(bpid); i++ {
+		pid[i] = types.NewU8(bpid[i])
+	}
+
+	newcall, err := types.NewCall(c.Metadata, "Oss.register", pid, types.NewBytes([]byte(domain)))
+	if err != nil {
+		return "", errors.Wrap(err, "register oss error")
+	}
+
+	blockhash, err := c.SubmitExtrinsic(caller, newcall, "Oss.OssRegister", event, c.Timeout)
+	if err != nil {
+		return blockhash, errors.Wrap(err, "register oss error")
+	}
+	return blockhash, nil
+}
+
 // UpdateOss updates the domain name of an existing OSS service.
 // Parameters:
 //
@@ -159,6 +183,28 @@ func (c *Client) UpdateOss(domain string, caller *signature.KeyringPair, event a
 		return "", errors.Wrap(errors.New("bad domain"), "update oss error")
 	}
 	newcall, err := types.NewCall(c.Metadata, "Oss.update", [38]types.U8{}, types.NewBytes([]byte(domain)))
+	if err != nil {
+		return "", errors.Wrap(err, "update oss error")
+	}
+
+	blockhash, err := c.SubmitExtrinsic(caller, newcall, "Oss.OssUpdate", event, c.Timeout)
+	if err != nil {
+		return blockhash, errors.Wrap(err, "update oss error")
+	}
+	return blockhash, nil
+}
+
+func (c *Client) UpdateOssWithPeerId(domain, peerId string, caller *signature.KeyringPair, event any) (string, error) {
+
+	if domain == "" || len(domain) > 100 {
+		return "", errors.Wrap(errors.New("bad domain"), "update oss error")
+	}
+	var pid [38]types.U8
+	bpid := base58.Decode(peerId)
+	for i := 0; i < len(pid) && i < len(bpid); i++ {
+		pid[i] = types.NewU8(bpid[i])
+	}
+	newcall, err := types.NewCall(c.Metadata, "Oss.update", pid, types.NewBytes([]byte(domain)))
 	if err != nil {
 		return "", errors.Wrap(err, "update oss error")
 	}

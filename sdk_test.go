@@ -328,7 +328,7 @@ func TestBatchUploadFile(t *testing.T) {
 }
 
 func TestUploadDataToGateway(t *testing.T) {
-	baseUrl := "http://154.194.34.195:1306"
+	baseUrl := "https://gateway.cess.network/"
 	mnemonic := "skill income exile ethics sick excess sea deliver medal junk update fault"
 	message := "123456"
 	territory := "test1"
