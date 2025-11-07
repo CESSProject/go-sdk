@@ -103,7 +103,7 @@ Returns:
   - []StakingNominations: Slice of nominator data structures
   - error: Storage access error with context
 */
-func (c *Client) QueryAllNominators(block uint32) ([]StakingNominations, error) {
+func (c *Client) QueryAllNominators(block uint32) (map[types.AccountID]StakingNominations, error) {
 	data, err := QueryStorages[StakingNominations](c, block, "Staking", "Nominators")
 	if err != nil {
 		return data, errors.Wrap(err, "query all nominators error")
@@ -122,7 +122,7 @@ Returns:
   - []types.AccountID: Slice of account identifier data structures
   - error: Storage access error with context
 */
-func (c *Client) QueryAllBondeds(block uint32) ([]types.AccountID, error) {
+func (c *Client) QueryAllBondeds(block uint32) (map[types.AccountID]types.AccountID, error) {
 	data, err := QueryStorages[types.AccountID](c, block, "Staking", "Bonded")
 	if err != nil {
 		return data, errors.Wrap(err, "query all bondeds error")

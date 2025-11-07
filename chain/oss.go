@@ -34,7 +34,7 @@ func (c *Client) QueryOss(account []byte, block uint32) (OssInfo, error) {
 //
 //	[]OssInfo - Slice containing OSS information for all accounts
 //	error      - Error if the query operation fails
-func (c *Client) QueryAllOss(block uint32) ([]OssInfo, error) {
+func (c *Client) QueryAllOss(block uint32) (map[types.AccountID]OssInfo, error) {
 	data, err := QueryStorages[OssInfo](c, block, "Oss", "Oss")
 	if err != nil {
 		return data, errors.Wrap(err, "query all oss info error")
@@ -82,8 +82,7 @@ func (c *Client) Authorize(account []byte, caller *signature.KeyringPair, event 
 	if err != nil {
 		return "", errors.Wrap(err, "authorize oss error")
 	}
-
-	blockhash, err := c.SubmitExtrinsic(caller, newcall, " Oss.Authorize", event, c.Timeout)
+	blockhash, err := c.SubmitExtrinsic(caller, newcall, "Oss.Authorize", event, c.Timeout)
 	if err != nil {
 		return blockhash, errors.Wrap(err, "authorize oss error")
 	}

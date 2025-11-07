@@ -479,12 +479,12 @@ func QueryStorage[T any](c *Client, block uint32, prefix, method string, args ..
 //
 //	Slice of decoded storage data entries
 //	Error if key retrieval, storage query, or decoding fails
-func QueryStorages[T any](c *Client, block uint32, prefix, method string) ([]T, error) {
+func QueryStorages[V any](c *Client, block uint32, prefix, method string) (map[types.AccountID]V, error) {
 	var (
 		err   error
 		keys  []types.StorageKey
 		set   []types.StorageChangeSet
-		datas []T
+		datas map[types.AccountID]V = make(map[types.AccountID]V)
 	)
 	conn, err := c.connMg.GetConn()
 	if err != nil {
@@ -510,11 +510,15 @@ func QueryStorages[T any](c *Client, block uint32, prefix, method string) ([]T, 
 	}
 	for _, elem := range set {
 		for _, change := range elem.Changes {
-			var data T
+			var (
+				data V
+				key  types.AccountID
+			)
+			copy(key[:], change.StorageKey[len(change.StorageKey)-32:])
 			if err := codec.Decode(change.StorageData, &data); err != nil {
 				continue
 			}
-			datas = append(datas, data)
+			datas[key] = data
 		}
 	}
 	return datas, nil

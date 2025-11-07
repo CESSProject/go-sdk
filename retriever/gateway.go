@@ -12,9 +12,12 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/CESSProject/go-sdk/chain"
+	"github.com/CESSProject/go-sdk/libs/tsproto"
+	"github.com/decred/base58"
 	"github.com/pkg/errors"
 	"github.com/vedhavyas/go-subkey/sr25519"
 )
@@ -507,6 +510,52 @@ func BatchUploadFile(baseUrl, token, hash string, reader io.ReaderAt, start, end
 		return res, errors.Wrap(err, "batch upload file error")
 	}
 	return res, nil
+}
+
+// AuthorizeGateways authorizes the gateway pointed to by the given URL and all its peer gateways within the same cluster,
+// enabling them to help the user manage territory and data.
+//
+// Parameters:
+//   - url: Domain name of the gateway (or gateway cluster) to be authorized (e.g., "http://gateway.example.com")
+//   - rpc: The CESS blockchain RPC endpoint URL for blockchain interactions
+//   - mnemonic: The mnemonic phrase for the account that will authorize the gateways
+//
+// Returns:
+//   - error: Returns nil if authorization is successful, otherwise returns an error describing what went wrong
+//     Possible error scenarios:
+//   - CDN node availability check fails
+//   - Blockchain client initialization fails
+//   - Querying OSS entries from blockchain fails
+//   - Authorization transaction fails for matching OSS entries
+func AuthorizeGateways(url, rpc, mnemonic string) error {
+	node, err := tsproto.CheckCdnNodeAvailable(url)
+	if err != nil {
+		return errors.Wrap(err, "authorize gateways error")
+	}
+	cli, err := chain.NewLightCessClient(mnemonic, []string{rpc})
+	if err != nil {
+		return errors.Wrap(err, "authorize gateways error")
+	}
+	osses, err := cli.QueryAllOss(0)
+	if err != nil {
+		return errors.Wrap(err, "authorize gateways error")
+	}
+	wg := sync.WaitGroup{}
+	for k, v := range osses {
+		acc, info := k, v
+		if string(info.Peerid[:]) != string(base58.Decode(node.PoolId)) {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err = cli.Authorize(acc[:], nil, nil); err != nil {
+				return
+			}
+		}()
+	}
+	wg.Wait()
+	return errors.Wrap(err, "authorize gateways error")
 }
 
 func SendHttpRequest(method, url string, headers map[string]string, dataReader *bytes.Buffer) ([]byte, error) {

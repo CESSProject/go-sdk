@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/CESSProject/go-sdk/chain"
+	"github.com/CESSProject/go-sdk/libs/utils"
 	"github.com/CESSProject/go-sdk/retriever"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/registry"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
@@ -65,11 +67,11 @@ func TestTransfer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	total, errCount := 1, &atomic.Int32{}
+	total, errCount := 100, &atomic.Int32{}
 	wg := sync.WaitGroup{}
 	wg.Add(total)
 	st := time.Now()
-	pool, err := ants.NewPool(1)
+	pool, err := ants.NewPool(100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,10 +329,54 @@ func TestBatchUploadFile(t *testing.T) {
 	}
 }
 
+func TestAuthGateways(t *testing.T) {
+	if err := retriever.AuthorizeGateways(
+		"https://gateway.cess.network",
+		"wss://t2-rpc.cess.network",
+		"skill income exile ethics sick excess sea deliver medal junk update fault",
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Log("success")
+}
+
+func TestAuthOss(t *testing.T) {
+	cli, err := chain.NewLightCessClient(
+		"skill income exile ethics sick excess sea deliver medal junk update fault",
+		[]string{"wss://t2-rpc.cess.network"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := cli.QueryAllOss(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wg := sync.WaitGroup{}
+	for k, d := range data {
+		domain := string(d.Domain)
+		if !strings.Contains(domain, "cd2n-svc-hk-worker") {
+			continue
+		}
+		key := k[:]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if tx, err := cli.Authorize(k[:], nil, nil); err != nil {
+				t.Log(err)
+			} else {
+				t.Log("authorize oss:", utils.EncodePubkey(key, 11330), domain, " ,tx hash:", tx)
+			}
+		}()
+	}
+	wg.Wait()
+	t.Log("success")
+}
+
 func TestUploadDataToGateway(t *testing.T) {
-	baseUrl := "https://gateway.cess.network/"
+	baseUrl := "http://154.194.34.195:1306" //"https://gateway.cess.network/"
 	mnemonic := "skill income exile ethics sick excess sea deliver medal junk update fault"
-	message := "123456"
+	message := fmt.Sprintf("%d", time.Now().Unix())
 	territory := "test1"
 	account := "cXkGyoXtxnK2Zbw8X5gArXi9VGqKqE7b517muih45ds9Ebdno"
 	sign, err := retriever.SignedSR25519WithMnemonic(mnemonic, []byte(message))
@@ -344,20 +390,20 @@ func TestUploadDataToGateway(t *testing.T) {
 	t.Log("token", token)
 	wg := &sync.WaitGroup{}
 	errCounter := &atomic.Int32{}
-	total := 3000
+	total := 1
 	wg.Add(total)
 	for i := range total {
 		go func(i int) {
 			defer wg.Done()
 			writer := bytes.NewBuffer(nil)
 			for range 1 {
-				reader, err := GenRandomBlockData(writer, 4096)
+				reader, err := GenRandomBlockData(writer, 40960*1024)
 				if err != nil {
 					t.Log(err)
 					return
 				}
 				st := time.Now()
-				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i+60000), reader, false)
+				fhash, err := retriever.UploadFile(baseUrl, token, territory, fmt.Sprintf("test_file_%d", i), reader, false)
 				if err != nil {
 					errCounter.Add(1)
 					t.Log(err)
@@ -416,5 +462,6 @@ func GenRandomBlockData(writer *bytes.Buffer, size int64) (io.Reader, error) {
 		}
 		writer.Write(buf[:bytesToWrite])
 	}
+	log.Println(writer.Len())
 	return writer, nil
 }

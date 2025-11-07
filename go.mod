@@ -8,8 +8,10 @@ require (
 	github.com/CESSProject/cess-crypto/gosdk v0.0.0-20250612080638-1885e7005e8a
 	github.com/ChainSafe/go-schnorrkel v1.1.0
 	github.com/centrifuge/go-substrate-rpc-client/v4 v4.2.1
+	github.com/decred/base58 v1.0.4
 	github.com/ecies/go/v2 v2.0.11
 	github.com/ethereum/go-ethereum v1.15.8
+	github.com/gtank/ristretto255 v0.1.2
 	github.com/klauspost/reedsolomon v1.12.5
 	github.com/mholt/archiver v3.1.1+incompatible
 	github.com/panjf2000/ants v1.3.0
@@ -33,7 +35,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set v1.8.0 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
-	github.com/decred/base58 v1.0.4 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/dsnet/compress v0.0.1 // indirect
@@ -46,7 +47,6 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/gtank/merlin v0.1.1 // indirect
-	github.com/gtank/ristretto255 v0.1.2 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/mimoo/StrobeGo v0.0.0-20220103164710-9a04d6ca976b // indirect
